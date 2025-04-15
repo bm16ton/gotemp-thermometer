@@ -85,6 +85,9 @@ struct gotemp {
 
 char test[] = {"00000"};
 
+uint32_t btemp = 0;
+int charToInt(const char *s);
+
 struct output_packet {
 	u8	cmd;
 	u8	params[7];
@@ -152,11 +155,47 @@ static ssize_t show_temp(struct device *dev, struct device_attribute *attr,
 {
 	struct usb_interface *intf = to_usb_interface(dev);
 	struct gotemp *gdev = usb_get_intfdata(intf);
-
-	return sprintf(buf, "%d\n", gdev->temperature);
+//    int yuptemp = (gdev->temperature / 128);
+//	btemp = (gdev->temperature / 128);
+    printk("from probe raw data %d\n", gdev->temperature); 
+	btemp = (((gdev->temperature / 128) * 9) / 5) + 32;
+	return sprintf(buf, "%d\n", btemp);
 }
 
 static DEVICE_ATTR(temperature, S_IRUGO, show_temp, NULL);
+
+#include "linux/ctype.h"
+
+int charToInt(const char *s)
+{
+  int n;
+  unsigned char sign = 0;
+
+  while (isspace(*s))
+  {
+    s++;
+  }
+
+  if (*s == '-')
+  {
+    sign = 1;
+    s++;
+  }
+  else if (*s == '+')
+  {
+    s++;
+  }
+
+  n=0;
+
+  while (isdigit(*s))
+  {
+    n = n * 10 + *s++ - '0';
+  }
+
+  return sign ? -n : n;
+}
+
 
 static void read_int_callback(struct urb *urb)
 {
@@ -165,7 +204,11 @@ static void read_int_callback(struct urb *urb)
 	struct measurement_packet *measurement = urb->transfer_buffer;
 	int retval;
 //	int i;
+	uint32_t btemp2;
+	uint32_t btemp3;
+	uint32_t btemp4;
 
+//	char poo[] = {"00000"};
 	switch (urb->status) {
 	case 0:
 		/* success */
@@ -184,7 +227,7 @@ static void read_int_callback(struct urb *urb)
 	}
 
 //	dev_info(&urb->dev->dev, "int read data: ");
-//	for (i = 0; i < urb->actual_length; ++i) 
+//	for (i = 0; i < urb->actual_length; ++i)
 	//	printk("%02x ", data[i]);
 
 	//printk("\n");
@@ -192,9 +235,26 @@ static void read_int_callback(struct urb *urb)
 //	dev_dbg(&urb->dev->dev, "counter %d, temperature=%d\n",
 //		 measurement->rolling_counter,
 //		 measurement->measurement0);
+	btemp = measurement->measurement0;
+//	printk("btemp %d\n", btemp);
 	gdev->temperature = le16_to_cpu(measurement->measurement0);
+//	printk("gdev->temperature %d\n", gdev->temperature);
+	btemp2 = (((gdev->temperature / 128) * 9) / 5) + 32;
+	btemp3 = (btemp * 100);
+//	printk("btemp3 %d\n", btemp3);
+	btemp4 = (((btemp3 / 128) * 9) / 5) + 3200;
+	uint32_t btemp42 = btemp4;
+//	printk("btemp4 %d\n", btemp4);
+//	printk("btemp2 %d\n", btemp2);
 
-	sprintf(test, "%d\n", gdev->temperature);
+    int mod = btemp4 % 10;  //split last digit from number
+	btemp4 = btemp4 / 10;
+	int mod2 = btemp4 % 10;
+	int mod3 = ((mod2 * 10) + mod);
+	int mod4 = (btemp42 / 100);
+//		printk("after dec %d\n", mod3);
+	sprintf(test, "%d.%d\n", mod4, mod3);
+//	sprintf(test, "%d\n", btemp2);
     
 exit:
 	retval = usb_submit_urb(urb, GFP_ATOMIC);
@@ -261,7 +321,7 @@ static int gotemp_probe(struct usb_interface *interface,
 			 endpoint->bInterval);
 
 	usb_set_intfdata(interface, gdev);
-     
+
 	/* we can register the device now, as it is ready */
 	retval = usb_register_dev(interface, &gotemp_class);
 	if (retval) {
@@ -322,7 +382,7 @@ static void gotemp_disconnect(struct usb_interface *interface)
 
    usb_deregister_dev(interface, &gotemp_class);
 //   unregister_chrdev(Major, gotemp);
-   
+
 	dev_info(&interface->dev, "USB GoTemp now disconnected\n");
 }
 
@@ -362,6 +422,7 @@ dev_release(struct inode *in, struct file *fl)
 static ssize_t
 dev_read(struct file *f, char *buf, size_t len, loff_t *offset)
 {
+	
     if (copy_to_user(buf, test, sizeof(test)) != 0)
      {
         printk(KERN_ALERT "Copy to user error!");
